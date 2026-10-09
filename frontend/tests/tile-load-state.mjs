@@ -1,0 +1,3 @@
+import assert from 'node:assert/strict';
+import {createTileLoadState} from '../src/scene/tileLoadState.js';
+const s=createTileLoadState(20000);s.update('globe',12,1000);assert.equal(s.snapshot(2000).phase,'loading');s.update('globe',4,15000);assert.equal(s.snapshot(21000).phase,'warning');assert.equal(s.snapshot(21000).pending,4);s.update('globe',0,22000);assert.equal(s.snapshot(22000).phase,'ready');s.fail('model');assert.equal(s.snapshot(22000).phase,'warning');s.reset('model');assert.equal(s.snapshot(22000).phase,'ready');s.update('model',3,23000);s.update('globe',2,23000);assert.equal(s.snapshot(24000).pending,5);console.log('PASS: progress, deadline, completion, failure, retry and combined counts');

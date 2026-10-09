@@ -9,5 +9,6 @@ frontend/.vite/
 .vscode/
 *.log
 logs/
+managed_data/
 .DS_Store
 Thumbs.db

@@ -1,14 +1,15 @@
 <template>
   <div class="module-page risk-page">
-    <header class="module-head">
-      <div class="mh-left">
-        <h2><AppIcon name="alert" /> 模块 9 · 预警与风险提示中心</h2>
+    <header class="page-head rise-in">
+      <div class="ph-left">
+        <div class="ph-kicker"><i></i><span>Risk Alerts</span></div>
+        <h2>预警与风险提示中心</h2>
         <p class="ph-desc">
           基于穹宇AI降水预报产品，按 24 小时累计降水量阈值自动判定降水强度等级，
           每6小时更新过去24小时的滑动累计，输出风险等级、峰值落区、达到大雨阈值的省级中心邻域排行与关注建议。
         </p>
       </div>
-      <div class="mh-right">
+      <div class="ph-right">
         <span class="mh-chip">起报时次 {{ cycleLabel }}</span>
         <button class="btn btn-ghost" :disabled="loading" @click="load">
           <AppIcon name="refresh" /> {{ loading ? '加载中' : '刷新预警' }}

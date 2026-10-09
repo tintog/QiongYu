@@ -5,7 +5,7 @@
         <div class="ph-kicker"><i></i><span>Point Forecast · Module 05</span></div>
         <h2>单点预报详情</h2>
         <p class="ph-desc">
-          针对任意经纬度格点，输出未来 15 天逐 6 小时要素序列。
+          针对任意经纬度格点，输出当前启用批次的可用逐6小时要素序列。
           降水展示逐日累计和有雨时段；风速展示逐日最大值；其他要素展示逐日样本平均值，
           用于面向具体站点的精细化解读。
         </p>
@@ -94,7 +94,7 @@
                 <small>{{ point.summary?.maximumTime ? formatShort(point.summary.maximumTime) : '--' }}</small>
               </div>
               <div class="metric" style="--accent:#5fd8ff">
-                <span>{{ isPrecip ? '15天累计' : '最低值' }}</span><strong>{{ num(isPrecip ? point.summary?.total : point.summary?.minimum) }}<em>{{ isPrecip ? 'mm' : point.unit }}</em></strong>
+                <span>{{ isPrecip ? '已加载时效累计' : '最低值' }}</span><strong>{{ num(isPrecip ? point.summary?.total : point.summary?.minimum) }}<em>{{ isPrecip ? 'mm' : point.unit }}</em></strong>
                 <small>{{ isPrecip ? '全程累计量' : '全时段最小值' }}</small>
               </div>
               <div class="metric" style="--accent:#3fd8b0">
@@ -128,7 +128,7 @@
 
       <!-- 中：曲线 -->
       <section class="point-center">
-        <section class="panel" style="flex:1">
+        <section class="panel" style="flex:0 0 auto">
           <div class="panel-head">
             <div class="panel-title">
               <i class="bar"></i>

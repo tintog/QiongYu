@@ -1,14 +1,15 @@
 <template>
   <div class="module-page system-page">
-    <header class="module-head">
-      <div class="mh-left">
-        <h2><AppIcon name="server" /> 模块 10 · 系统与任务管理</h2>
+    <header class="page-head rise-in">
+      <div class="ph-left">
+        <div class="ph-kicker"><i></i><span>System Management</span></div>
+        <h2>系统与任务管理</h2>
         <p class="ph-desc">
           集中展示穹宇AI降水预报模型的产品档案、数据血缘（从双源下载到质检发布的全流程）、
           时效完整性质检报告与实时任务监控状态，支撑运维值守与数据可追溯性核查。
         </p>
       </div>
-      <div class="mh-right">
+      <div class="ph-right">
         <span class="mh-chip" :class="{ live: monitorRunning }">
           <span class="dot"></span> 实时监控{{ monitorRunning ? '运行中' : '已停止' }}
         </span>

@@ -6,7 +6,7 @@
         <div class="ph-kicker"><i></i><span>National Situation · Module 01</span></div>
         <h2>全国降水态势总览</h2>
         <p class="ph-desc">
-          基于穹宇AI降水预报模型 {{ info.modelProduct }} 逐6小时确定性产品，展示未来15天全国降水落区、
+          基于当前启用的 {{ info.modelProduct }} 逐6小时确定性产品，展示可用时效的全国降水落区、
           强度分布与区域排行。当前有效时间 {{ formatFull(overviewData.validTime) }}，网格分辨率
           {{ info.spatialResolution }}，共 {{ timeline.length }} 个时次。
         </p>
@@ -129,7 +129,7 @@
         <div class="map-stage">
           <div ref="mapEl" class="map-canvas"></div>
 
-          <div v-if="loading" class="loading-veil"><div class="spinner"></div><span>正在加载 {{ overviewData.accumulationLabel }}…</span></div>
+          <div v-if="loading && !overviewData.leadHour" class="loading-veil"><div class="spinner"></div><span>正在加载 {{ overviewData.accumulationLabel }}…</span></div>
 
           <!-- 地图右上角实时时钟 -->
           <div class="map-hud">
@@ -227,7 +227,7 @@
             </p>
             <div ref="pointEl" class="point-mini-chart"></div>
             <div class="mini-summary">
-              <div><span>15天累计</span><strong>{{ num(pointData.summary?.total) }} mm</strong></div>
+              <div><span>已加载时效累计</span><strong>{{ num(pointData.summary?.total) }} mm</strong></div>
               <div><span>峰值</span><strong>{{ num(pointData.summary?.maximum) }} mm/6h</strong></div>
               <div><span>有雨时段</span><strong>{{ pointData.summary?.rainyPeriods ?? '--' }} 个</strong></div>
             </div>
@@ -322,18 +322,53 @@ function rankWidth(value) {
 
 /* ------------------------------------------------------------ 数据加载 */
 
+const frameCache = new Map()
+const frameRequests = new Map()
+let cacheGeneration = 0
+let pendingOverview = Promise.resolve()
+let disposed = false
+
+function getFrame(lead, mode) {
+  const key = `${mode}:${lead}`
+  if (frameCache.has(key)) return Promise.resolve(frameCache.get(key))
+  if (frameRequests.has(key)) return frameRequests.get(key)
+  const generation = cacheGeneration
+  const request = api.overview(lead, mode, 1).then((data) => {
+    if (!disposed && generation === cacheGeneration) {
+      frameCache.set(key, data)
+      if (frameCache.size > 12) frameCache.delete(frameCache.keys().next().value)
+    }
+    return data
+  }).finally(() => {
+    if (frameRequests.get(key) === request) frameRequests.delete(key)
+  })
+  frameRequests.set(key, request)
+  return request
+}
+
+function prefetchNext() {
+  if (disposed || !timeline.value.length) return
+  const next = timeline.value[(currentIndex.value + 1) % timeline.value.length]
+  getFrame(next.leadHour, accumulation.value).catch(() => {})
+}
+
 async function loadOverview() {
   const token = ++fetchToken
   loading.value = true
   try {
-    const data = await api.overview(currentLead.value, accumulation.value, 1)
-    if (token !== fetchToken) return
+    const data = await getFrame(currentLead.value, accumulation.value)
+    if (disposed || token !== fetchToken) return
     overviewData.value = data
     await nextTick()
+    if (disposed || token !== fetchToken) return
     renderMap()
     renderStrip()
+    prefetchNext()
   } catch (error) {
-    if (token === fetchToken) overviewData.value = { ...overviewData.value, error: error.message }
+    if (!disposed && token === fetchToken) {
+      overviewData.value = { ...overviewData.value, error: error.message }
+      playing.value = false
+    }
   } finally {
     if (token === fetchToken) loading.value = false
   }
@@ -363,12 +398,13 @@ function renderMap() {
   }
   mapChart.setOption(
     {
+      animation: false,
       backgroundColor: 'transparent',
       tooltip: { trigger: 'item', confine: true },
-      geo: geoOption({ zoom: 1.72, center: CHINA_DOMAIN_CENTER, roam: false }),
+      ...(mapChart.getOption()?.geo?.length ? {} : { geo: geoOption({ zoom: 1.72, center: CHINA_DOMAIN_CENTER, roam: false }) }),
       series,
     },
-    true,
+    { replaceMerge: ['series'] },
   )
   mapChart.off('click')
   mapChart.on('click', (params) => {
@@ -410,7 +446,6 @@ function renderPoint() {
 
 function setAccumulation(value) {
   accumulation.value = value
-  loadOverview()
 }
 
 function onRangeInput(event) {
@@ -436,7 +471,7 @@ function togglePlay() {
 async function playNext() {
   if (!playing.value) return
   stepLead(1)
-  await loadOverview()
+  await pendingOverview
   if (!playing.value) return
   playTimer = setTimeout(playNext, playSpeed.value)
 }
@@ -473,8 +508,8 @@ function gotoPointDetail() {
 
 /* ------------------------------------------------------------ 生命周期 */
 
-watch(currentIndex, () => loadOverview())
-watch(accumulation, () => renderStrip())
+watch(currentIndex, () => { pendingOverview = loadOverview() }, { flush: 'sync' })
+watch(accumulation, () => { pendingOverview = loadOverview() }, { flush: 'sync' })
 watch(playing, (value) => {
   clearTimeout(playTimer)
   if (value) playTimer = setTimeout(playNext, 300)
@@ -487,6 +522,9 @@ function onResize() {
 }
 
 async function bootstrap() {
+  cacheGeneration++
+  frameCache.clear()
+  frameRequests.clear()
   try {
     const [tl, prov] = await Promise.all([api.timeline(), api.provinces()])
     timeline.value = tl
@@ -508,6 +546,11 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  disposed = true
+  fetchToken++
+  cacheGeneration++
+  frameCache.clear()
+  frameRequests.clear()
   clearTimeout(playTimer)
   window.removeEventListener('resize', onResize)
   disposeChart(mapEl.value)

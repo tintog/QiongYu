@@ -5,7 +5,7 @@
         <div class="ph-kicker"><i></i><span>Ensemble Probability · Module 08</span></div>
         <h2>集合与概率预报</h2>
         <p class="ph-desc">
-          基于盘古轻量级集合预报产品 {{ info.ensembleProduct || 'ENS' }} 的 21 个成员场，
+          基于当前起报时间的集合预报产品 {{ info.ensembleProduct || '暂无同起报数据' }} 的 {{ info.ensembleMembers || '可用' }} 个成员场，
           统计降水达到指定阈值的概率分布、集合平均、离散度与 90 分位包络，
           用于表达预报不确定性并支撑概率化决策。
         </p>
@@ -19,7 +19,7 @@
     <div v-if="loading" class="panel" style="flex:1;justify-content:center">
       <div class="skeleton" style="height:200px"></div>
       <p style="text-align:center;font-size:11px;color:var(--text-faint);margin-top:10px">
-        正在读取 21 个集合成员并统计概率场，数据量较大请稍候…
+        正在读取当前批次集合成员并统计概率场，请稍候…
       </p>
     </div>
 

@@ -77,6 +77,7 @@ class RealtimeMonitor:
                 current[label] = None
                 continue
             current[label] = {
+                "batchRoot": str(index.root),
                 "cycle": index.cycle,
                 "leads": len(index.leads),
                 "maxLead": index.leads[-1] if index.leads else 0,

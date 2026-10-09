@@ -390,7 +390,7 @@ def _to_cycle(day: str) -> str:
     return f"{day}00"
 
 
-def resolve_latest(root: Path | None = None) -> tuple[ProductIndex | None, ProductIndex | None]:
+def resolve_latest(root: Path | None = None, use_active: bool = True) -> tuple[ProductIndex | None, ProductIndex | None]:
     """找出最新的确定性产品与集合产品索引。"""
     root = root or DATA_ROOT
     available = list_available_cycles(root)
@@ -408,6 +408,12 @@ def resolve_latest(root: Path | None = None) -> tuple[ProductIndex | None, Produ
             ens = candidate
             break
 
+    if use_active and root == DATA_ROOT:
+        from app import dataset_manager as dm
+        det = dm.active_index("DF", det)
+        ens = dm.active_index("ens", ens)
+        if ens and (det is None or ens.cycle != det.cycle):
+            ens = None
     return det, ens
 
 

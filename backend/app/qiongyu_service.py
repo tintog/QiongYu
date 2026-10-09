@@ -2,7 +2,7 @@
 
 把 `qiongyu_data` 的原始产品读取能力，组装成演示系统 10 大功能模块所需的
 全部数据结构：态势总览、下钻、时间轴、多要素、单点预报、检验看板、
-多模式对比、集合概率、风险预警、任务血缘。
+集合概率、风险预警、任务血缘。
 """
 
 from __future__ import annotations
@@ -17,43 +17,6 @@ from app import qiongyu_data as qd
 
 UTC8 = timezone(timedelta(hours=8))
 
-# 多模式对比：可选的模式链路。
-# 优先使用同日多产品目录（DF / DF_AIFS / DF_FUSED）；
-# 若本机仅落库确定性主链，则用「前一日起报」作为历史基线对照，
-# 保证「多模式对比」模块在任何数据状态下都有可解释的对照对象。
-MODE_DEFINITIONS = [
-    {
-        "key": "fused",
-        "label": "穹宇融合预报",
-        "shortLabel": "融合",
-        "product": "DF",
-        "variable": "TP",
-        "description": "IFS + AIFS 双链加权融合（降水权重 AIFS 0.7 / IFS 0.3），当前对外主推产品",
-        "color": "#5fd8ff",
-        "primary": True,
-    },
-    {
-        "key": "ifs",
-        "label": "IFS 单链基线",
-        "shortLabel": "IFS",
-        "product": "DF_AIFS",
-        "variable": "TP",
-        "description": "ECMWF IFS 单一模式基线，用于对照双链融合的改进幅度",
-        "color": "#ffd166",
-        "primary": False,
-    },
-    {
-        "key": "previous",
-        "label": "前一日同起报时效",
-        "shortLabel": "前日",
-        "product": "DF",
-        "variable": "TP",
-        "description": "前一日起报的同一时效结果，用于观察预报的日际连续性",
-        "color": "#a78bfa",
-        "primary": False,
-        "offsetDays": -1,
-    },
-]
 
 # 阈值分级（mm/6h）——对应检验指标中的分级降水
 SCORE_THRESHOLDS = [0.1, 13.0, 25.0]
@@ -93,7 +56,7 @@ def _nearest_lead(leads: list[int], lead_hour: int) -> int:
 def _load_tp_field(index: qd.ProductIndex, lead: int, stride: int = qd.DEFAULT_STRIDE):
     """读取某一时效的降水场，带缓存。"""
     lead = _nearest_lead(index.leads, lead)
-    key = f"tp|{index.product}|{index.cycle}|{lead}|{stride}"
+    key = f"tp|{index.root}|{index.product}|{index.cycle}|{lead}|{stride}"
     cached = qd.FIELD_CACHE.get(key)
     if cached is not None:
         return cached
@@ -111,7 +74,7 @@ def _load_tp_field(index: qd.ProductIndex, lead: int, stride: int = qd.DEFAULT_S
 def _load_scalar_field(index: qd.ProductIndex, variable_key: str, lead: int):
     spec = qd.VARIABLE_MAP[variable_key]
     lead = _nearest_lead(index.leads, lead)
-    key = f"{variable_key}|{index.product}|{index.cycle}|{lead}"
+    key = f"{variable_key}|{index.root}|{index.product}|{index.cycle}|{lead}"
     cached = qd.FIELD_CACHE.get(key)
     if cached is not None:
         return cached
@@ -141,7 +104,9 @@ def _accumulate(index: qd.ProductIndex, lead: int, mode: str, stride: int = qd.D
         return values, lons, lats, [used]
 
     if mode == "24h":
-        span = [h for h in index.leads if max(6, lead - 18) <= h <= lead]
+        span = [lead - 18, lead - 12, lead - 6, lead]
+        if any(h < 6 or not index.path_for("SURFACE", h) for h in span):
+            raise ValueError("缺少完整24小时的四段6小时降水，不能以部分时段冒充24小时累计")
     else:  # total
         span = [h for h in index.leads if h <= lead]
 
@@ -161,31 +126,37 @@ def _accumulate(index: qd.ProductIndex, lead: int, mode: str, stride: int = qd.D
 
 def system_info() -> dict[str, Any]:
     det, ens = _require_det()
+    from app import dataset_manager as dm
+    active = dm.catalog()["batches"]
+    metadata = next((x for x in active if x["product"] == "DF" and x["active"]), {})
+    ensemble_metadata = next((x for x in active if x["product"] == "ens" and x["active"]), {})
     base = qd.cycle_to_datetime(det.cycle)
     timeline = qd.build_timeline(det.cycle, det.leads)
     return {
         "name": "穹宇气象大模型演示系统",
         "subtitle": "0—15天逐6小时降水预报",
-        "modelName": "穹宇AI降水预报模型",
+        "modelName": metadata.get("model", "预报产品展示"),
         "modelProduct": f"{det.product_name} {det.product_version}",
         "modelVersion": det.product_version,
         "ensembleProduct": f"{ens.product_name} {ens.product_version}" if ens else None,
         "initialTime": base.isoformat(),
         "initCycle": det.cycle,
         "updatedAt": datetime.now(UTC8).isoformat(),
-        "forecastRange": "0—15天",
-        "forecastHours": 360,
+        "forecastRange": f"{det.leads[0]}—{det.leads[-1]}小时",
+        "forecastHours": det.leads[-1],
         "timeResolution": "6小时",
         "spatialResolution": "0.25°×0.25°",
         "leadCount": len(det.leads),
         "timelineCount": len(timeline),
-        "ensembleMembers": 21 if ens else 0,
-        "dataSource": "AIM-FDP 竞赛产品流水线",
-        "computePlatform": "青龙超算",
-        "dataRoot": str(qd.DATA_ROOT),
+        "ensembleMembers": len(ensemble_metadata.get("members", [])),
+        "dataSource": metadata.get("source", "未知来源"),
+        "activeBatchId": metadata.get("id"),
+        "activeBatchName": metadata.get("name"),
+        "computePlatform": "本地产品读取与展示",
+        "dataRoot": str(det.root),
         "dataRootSource": qd.DATA_ROOT_SOURCE,
         "isRealData": True,
-        "boundaryNote": "预报范围为全球 0.25° 规则网格，页面展示时按中国区域裁剪。",
+        "boundaryNote": "页面按70—140°E、12—56°N范围裁剪，实际输入范围以批次文件为准。",
     }
 
 
@@ -193,6 +164,17 @@ def data_lineage() -> dict[str, Any]:
     """数据血缘：从原始场到产品的完整链路，用于「任务系统管理」模块展示。"""
     det, ens = _require_det()
     base = qd.cycle_to_datetime(det.cycle)
+    if det.root != qd.DATA_ROOT:
+        from app import dataset_manager as dm
+        value = dm.job(det.root.name)
+        return {"cycle": det.cycle, "cycleTime": base.isoformat(),
+                "stages": [{"key": "import", "name": "上传并校验", "status": "completed",
+                            "detail": f"用户声明来源：{value['source']}（未独立认证）；校验文件结构、单位、网格、时效与完整性",
+                            "count": len(value['files']), "duration": "—"},
+                           {"key": "activate", "name": "启用产品", "status": "completed",
+                            "detail": "此系统只读取已生成预报，不执行模型推理", "count": det.file_count(), "duration": "—"}],
+                "products": [{"name": value['name'], "files": det.file_count(), "leads": len(det.leads),
+                              "kinds": det.kinds(), "source": value['source']} ]}
     stages = [
         {"key": "download", "name": "双源数据下载", "status": "completed",
          "detail": "ECMWF Open Data IFS + AIFS 0.25° GRIB2，经超算代理直连下载",
@@ -272,6 +254,7 @@ def overview(lead_hour: int = 6, accumulation: str = "6h",
 
     return {
         "leadHour": lead,
+        "cycle": det.cycle,
         "validTime": valid.isoformat(),
         "accumulation": accumulation,
         "accumulationLabel": label,
@@ -376,6 +359,7 @@ def variable_field(variable_key: str, lead_hour: int = 6,
 
     payload = _load_scalar_field(det, variable_key, lead)
     result: dict[str, Any] = {
+        "cycle": det.cycle,
         "key": variable_key,
         "name": spec["name"],
         "shortName": spec["shortName"],
@@ -433,7 +417,7 @@ def point_forecast(lon: float, lat: float, variable_key: str = "tp") -> dict[str
     det, _ = _require_det()
     base = qd.cycle_to_datetime(det.cycle)
 
-    key = f"pt|{det.cycle}|{round(lon,2)}|{round(lat,2)}|{variable_key}"
+    key = f"pt|{det.root}|{det.cycle}|{round(lon,2)}|{round(lat,2)}|{variable_key}"
     cached = qd.POINT_CACHE.get(key)
     if cached is not None:
         return cached
@@ -493,6 +477,7 @@ def point_forecast(lon: float, lat: float, variable_key: str = "tp") -> dict[str
                        rainyPeriods=len([v for v in values_only if v >= 0.1]))
 
     result = {
+        "cycle": det.cycle,
         "requested": {"lon": round(lon, 2), "lat": round(lat, 2)},
         "gridPoint": _nearest_grid(lon, lat),
         "region": _nearest_anchor(lon, lat),
@@ -578,96 +563,6 @@ def verification(lead_hour: int = 24) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# 8. 多模式对比（模块七）
-# ---------------------------------------------------------------------------
-
-def mode_comparison(lead_hour: int = 24, stride: int = 2) -> dict[str, Any]:
-    det, _ = _require_det()
-    lead = _nearest_lead(det.leads, lead_hour)
-
-    modes: list[dict[str, Any]] = []
-    fields: dict[str, np.ndarray] = {}
-    lons = lats = None
-
-    for spec in MODE_DEFINITIONS:
-        offset = spec.get("offsetDays", 0)
-        day = det.day
-        index = None
-        if offset:
-            day = (datetime.strptime(det.day, "%Y%m%d") + timedelta(days=offset)).strftime("%Y%m%d")
-            index = qd.scan_product_dir(qd.DATA_ROOT, day, spec["product"])
-        else:
-            index = qd.scan_product_dir(qd.DATA_ROOT, day, spec["product"])
-            # 同日无该产品目录时，尝试在 DATE 子目录外查找备用目录
-            if index is None and spec["product"] not in ("DF", "ens"):
-                index = None
-        if index is None:
-            continue
-        try:
-            values, mlons, mlats, _ = _load_tp_field(index, lead, stride=stride)
-        except Exception:
-            continue
-        lons = lons if lons is not None else mlons
-        lats = lats if lats is not None else mlats
-        fields[spec["key"]] = values
-        stats = qd.field_statistics(values)
-        modes.append({
-            "key": spec["key"],
-            "label": spec["label"],
-            "shortLabel": spec["shortLabel"],
-            "description": spec["description"],
-            "color": spec["color"],
-            "product": spec["product"],
-            "cycle": index.cycle,
-            "source": f"{index.product_name} {index.product_version}",
-            "unit": "mm/6h",
-            "statistics": stats,
-            "points": qd.field_to_points(values, mlons, mlats),
-            "palette": qd.PALETTES["precip"],
-        })
-
-    if not modes:
-        return {"available": False, "message": "未发现可对比的模式产品。", "cycle": det.cycle}
-
-    # 差值场：以首个（主推）模式为基准，其余模式与其求差
-    diffs: list[dict[str, Any]] = []
-    keys = list(fields)
-    baseline = keys[0]
-    for other in keys[1:]:
-        if fields[baseline].shape != fields[other].shape:
-            continue
-        delta = fields[baseline] - fields[other]
-        diffs.append({
-            "left": baseline,
-            "right": other,
-            "leftLabel": next(m["label"] for m in modes if m["key"] == baseline),
-            "rightLabel": next(m["label"] for m in modes if m["key"] == other),
-            "meanDelta": round(float(np.mean(delta)), 3),
-            "mae": round(float(np.mean(np.abs(delta))), 3),
-            "rmse": round(float(np.sqrt(np.mean(delta ** 2))), 3),
-            "corr": round(float(np.corrcoef(fields[baseline].ravel(),
-                                            fields[other].ravel())[0, 1]), 4),
-            "maxDelta": round(float(delta.max()), 3),
-            "minDelta": round(float(delta.min()), 3),
-            "maxAbs": round(float(np.abs(delta).max()), 3),
-            "strongCount": int((delta >= 10).sum()),
-            "weakCount": int((delta <= -10).sum()),
-            "points": qd.field_to_points(delta, lons, lats),
-            "range": round(float(np.percentile(np.abs(delta), 99)), 2),
-        })
-
-    return {
-        "available": True,
-        "cycle": det.cycle,
-        "leadHour": lead,
-        "unit": "mm/6h",
-        "modes": modes,
-        "diffs": diffs,
-        "baseline": baseline,
-    }
-
-
-# ---------------------------------------------------------------------------
 # 9. 集合概率（模块八）
 # ---------------------------------------------------------------------------
 
@@ -679,7 +574,7 @@ def ensemble_probability(lead_hour: int = 24, threshold: float = 10.0,
     """集合概率：21 个成员中达到阈值的比例场，以及离散度。"""
     det, ens = _require_det()
     if ens is None:
-        return {"available": False, "message": "未发现集合预报产品（ens）。",
+        return {"available": False, "message": "当前起报时间没有匹配的集合预报产品（ens），不使用其他日期的数据。",
                 "cycle": det.cycle}
 
     lead = _nearest_lead(ens.leads, lead_hour)
@@ -689,7 +584,7 @@ def ensemble_probability(lead_hour: int = 24, threshold: float = 10.0,
                 "cycle": ens.cycle}
 
     var = "TP" if ens.path_for("SURFACE", lead) else "Z500"
-    key = f"ens|{ens.cycle}|{var}|{lead}|{stride}"
+    key = f"ens|{ens.root}|{ens.cycle}|{var}|{lead}|{stride}"
     cached = qd.FIELD_CACHE.get(key)
     if cached is not None:
         members, lons, lats = cached
