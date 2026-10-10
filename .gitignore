@@ -12,3 +12,5 @@ logs/
 managed_data/
 .DS_Store
 Thumbs.db
+
+frontend/tests/.weather-validation.json

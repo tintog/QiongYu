@@ -1,0 +1,26 @@
+{
+  "name": "上海陆家嘴",
+  "center": [
+    121.501,
+    31.236
+  ],
+  "bounds": [
+    121.488,
+    31.225,
+    121.515,
+    31.247
+  ],
+  "count": 1131,
+  "heights": {
+    "OSM height": 119,
+    "levels × 3.2m estimate": 138,
+    "12m schematic fallback": 874
+  },
+  "maxHeight": 632.0,
+  "source": "OpenStreetMap contributors",
+  "license": "ODbL-1.0",
+  "sourceUrl": "https://www.openstreetmap.org/copyright",
+  "extractedAt": "2026-10-09T12:27:17Z",
+  "baseElevation": 5,
+  "description": "真实位置的简化建筑；层数换算和缺失高度为估算，窗格为程序化示意材质。地面统一取椭球高5m，未进行逐栋测量。"
+}
